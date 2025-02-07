@@ -1,0 +1,115 @@
+#!/bin/sh -e
+##:
+#h: Usage: chad { -V | [-e[x]] [CAT] [NAME] | -k TERM }
+#h:
+#h: Fast note accessing tool, similar to man(1). Notes are written
+#h: in markdown language (.md) and stored in a directories listed
+#h: in $CHADPATH (by default ~/.chad:/usr/share/doc/chad).
+#h:
+#h:   -V                 : Show configuration variables.
+#h:   -e[x] [CAT] [NAME] : Edit note [in a gui].
+#h:   -k TERM            : Search term in notes.
+#h:   [CAT] NAME         : Open note with less(1) or $READER.
+#h:   (empty)            : List categories.
+#h:
+#h: You can configure the text editor by setting $EDITOR and $XEDITOR, by
+#h: default "vi" and "xterm -e vi" are used.
+##:
+chad() {
+    local OPTIND optopt cat man fil d IFS opt_e= opt_x= opt_k=
+    unset IFS
+    
+    ## Parse command line arguments.
+    while getopts "Vexk:" optopt; do
+        case $optopt in
+            V)  echo "CHADPATH : ${CHADPATH}"
+                echo "READER   : ${READER:-less}"
+                echo "PATHSEP  : ${PATHSEP}"
+                return 0;;
+            e)  opt_e=y;;
+            x)  opt_x=y;;
+            k)  opt_k="${OPTARG}";;
+            \?) return 1;;
+        esac
+    done
+    shift $(( $OPTIND - 1 ))
+    
+    ## Get category.
+    cat="$(echo "$1" | sed -n '/^[0-9]/p')"
+    if test -n "${cat}"; then
+        shift
+    fi
+    
+    ## Get manual.
+    man="$1"
+
+    ## Search term
+    if test -n "${opt_k}"; then
+        grep -R -Hni -m 1 "${opt_k}" $(chad_ls_dirs_cat "${cat}")
+        return 0
+    fi
+    
+    ## List categories.
+    if test ! -n "${cat}" && test ! -n "${man}"; then
+        cat <<-EOF >&2
+	1    Program/command documentation.
+	2    Operating system (libc)
+	3    Programming languages
+	4    Devices
+	5    Standards, protocols, formats
+	6    Free time, health
+	7    Miscellanea, howto
+	8    System administration
+	9    Information
+	EOF
+        return 1
+    fi
+    
+    ## Open or list manuals.
+    if test -n "${man}"; then
+        fil=''
+        for d in $(chad_ls_dirs_cat "${cat}"); do
+            fil="$(find "$d" -type f -regex ".*/${man}.md" | head -n 1)"
+            if test -n "${fil}"; then
+                break
+            fi
+        done
+        if test ! -n "${fil}"; then
+            echo >&2 "error: ${man}: Manual page not found."
+            return 1
+        fi
+        if test -n "${opt_e}" && test -n "${opt_x}"; then
+            ${EDITOR:-vi} "${fil}"
+        elif test -n "${opt_e}"; then
+            ${XEDITOR:-xterm -e ${EDITOR:-vi}} "${fil}"
+        else
+            ${READER:-less} "${fil}"
+        fi
+    else
+        find $(chad_ls_dirs) -type f -name '*.md' | sed -n "
+        \\|/${cat:-[0-9]}/|s|.*/${cat:-[0-9]}/\\(.*\\)\\.md|\1|p
+        " | xargs printf '%-37s %-37s\n'
+    fi
+}
+## -------------------------------------------------------------------
+chad_ls_dirs() {
+    local IFS="${PATHSEP}" d
+    for d in ${CHADPATH}; do
+        if test -d "${d}"; then
+            find "${d}" -maxdepth 1 -mindepth 1 -type d
+        fi
+    done
+}
+chad_ls_dirs_cat() {
+    local cat="$(echo "$1" | sed 's|^\([0-9]\).*|\1|')"
+    chad_ls_dirs | sed -n "\\|/${cat:-[0-9]}\$|p"
+}
+## -------------------------------------------------------------------
+case "$(uname -s)" in Windows_NT) PATHSEP=";";; *) PATHSEP=":";; esac
+CHADPATH="${CHADPATH:-${HOME}/.chad${PATHSEP}/usr/share/doc/chad}"
+if test @"${SCRNAME:-$(basename "$0")}" = @"chad"; then
+    case "${1}" in
+        -h|--help) sed -n 's/^ *#h: \{0,1\}//p' "$0" ;;
+        *)         chad "$@"; exit 0                 ;;
+    esac
+fi
