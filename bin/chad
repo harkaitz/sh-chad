@@ -78,7 +78,7 @@ chad() {
             echo >&2 "error: ${man}: Manual page not found."
             return 1
         fi
-        if test -n "${opt_e}" && test -n "${opt_x}"; then
+        if test -n "${opt_e}" && test ! -n "${opt_x}"; then
             ${EDITOR:-vi} "${fil}"
         elif test -n "${opt_e}"; then
             ${XEDITOR:-xterm -e ${EDITOR:-vi}} "${fil}"
